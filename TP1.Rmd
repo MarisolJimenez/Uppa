@@ -1,0 +1,146 @@
+---
+title: "TP1 & 2 Survie"
+output: html_document
+date: "2022-12-14"
+---
+
+## R Markdown
+
+Le package survival est le package de base dédié à l’analyse statistique de durées de vie. Nous
+allons également utiliser le package KMsurv qui contient tous les jeux de données utilisées dans le livre de Klein et Moeschberger 1. Il en existe d’autres qui sont pour la plupart recensés sur le CRAN Task
+Views "Survival Analysis".
+```{r}
+library(survival)
+library(KMsurv)
+```
+
+Avant de commencer à appliquer une méthode ou utiliser un modèle, il faut construire un objet de
+type Survival à l’aide de la fonction Surv. Le nombre de vecteurs en entrée de la fonction dépend du
+type de censure. Par exemple, pour le cas de durées avec censure éventuelle à droite, il faut fournir un vecteur contenant les durées (exactes ou censurées) et un vecteur indiquant si les durées sont exactes ou pas. Dans le cas de durées censurées par intervalles, il faut fournir deux vecteurs de durées. 
+
+Il y a donc toujours un vecteur de durées, c’est la variable time qui est obligatoire. Ensuite, il y a d’autres variables qu’il faut préciser ou pas selon les cas : time2, event et type. 
+
+Pour ce dernier, il y a cinq choix possibles : right, left, interval, counting et interval2. Nous allons étudier quelques unes de ces situations.
+
+## 1 Durées censurées à droite
+Pour des durées censurées à droite (situation par défaut), il faut fournir deux vecteurs : un premier
+vecteur contenant les durées (soit la date d’intérêt, soit la date de censure) et un second vecteur indiquant si la durée est censurée. Considérons un des jeux de données du package survival. Le tableau
+de données lung contient des informations sur des patients atteints d’un cancer avancé des poumons 2.
+
+La durée d’intérêt ici est le décès. Pour le moment, nous allons utiliser deux variables : la variable timecontient les durées observées et la variable status indique si la durée est 
+censurée (1) ou pas (2) especificado con la columna status, la duracion estara dada por time. 
+Lafonction Surv permet de créer un objet de type Survival.
+
+Una vez aplicada esta fucion al visualizar sus datos tenemos la representación con un + para el caso
+de censuras a la derecha, en el caso de censura intervalo o a la izq se ven los corchetes
+Comme il y a 228 individus, on n’affiche que les premières observations à l’aide de la fonction head. On obtient alors le résultat suivant où le symbole + indique que la durée est censurée à droite.
+On peut tester si un objet est de type Survival à l’aide de la fonction is.Surv.
+```{r}
+lung.surv <- with(lung,Surv(time,status))
+is.Surv(lung.surv)
+head(lung.surv)
+```
+
+## 2 Durées censurées par intervalles
+Considérons le cas de durées éventuellement censurées par intervalle, ce qui inclut le cas de durées
+à droite et à gauche. Comme expliqué précédemment, il faut fournir deux vecteurs de dates correspondant aux bornes des intervalles pour chaque individu. Si la borne de droite est égale à NA, alors la durée
+est censurée à droite. Si les deux bornes coïncident, alors la durée est exacte. Prenons un exemple.
+Le tableau de données bcdeter du package KMsurv contient des informations sur des patientes atteintes d’un cancer du sein 3 4. Ces patientes ont été traitées soit avec seulement une radiothérapie,
+soit avec une radiothérapie et une chimiothérapie. On s’intéresse au délai (en mois) d’apparition d’une
+dégradation modérée ou importante du sein.
+
+```{r}
+data(bcdeter)
+print(bcdeter[c(1,4,58,59),])
+```
+Les colonnes lower et upper correspondent aux bornes de l’intervalle et la colonne treat à la covariable (1 si radiothérapie et 2 si radiothérapie et chimiothérapie). L’individu 1 a subi l’événement avant le
+5ème mois (censure à gauche), l’individu 4 entre le 4ème et le 11ème mois (censure par intervalle), l’individu 59 après le 15ème mois (censure à droite). Quant à l’individu 58, il a subi l’événement exactement
+au 48ème mois (durée exacte). On construit ensuite l’objet de type Survival.
+```{r}
+breast.surv <- with(bcdeter,Surv(lower,upper,type="interval2"))
+print(breast.surv)
+```
+
+
+## 2.1 Durées censurées à droite et tronquées à gauche
+Le tableau de données psych du package KMsurv contient la date de décès ou de censure pour
+des patients hospitalisés en psychiatrie ainsi que leur âge au moment de leur inclusion dans l’étude. On
+aura reconnu une situation de censure à droite (on n’observe pas toujours le décès). Mais les durées
+sont aussi tronquées à gauche à cause de l’âge des patients au début de l’étude. Cette situation est très fréquente en biostatistique.
+
+```{r}
+data(psych)
+head(psych)
+```
+On construit ensuite un objet de type Survival à l’aide de la fonction Surv
+lim inf es su edad, lim sup es edad mas su permanencia, y el evento a medir es la muerte
+```{r}
+psych.surv<-with(psych,Surv(age,age+time,death))
+head(psych.surv)
+```
+
+Attention, on pourrait croire, avec un coup d’œil trop rapide, qu’il s’agit de durées censurées par intervalles. Il ne faut donc pas oublier le contexte. Les données se lisent de la manière suivante. Le patient
+1, âgé de 51 ans au début de l’étude, est décédé à l’âge de 52 ans, alors que le patient 5, âgé de 21
+ans au début de l’étude, n’était toujours pas décédé à l’âge de 51 ans.}
+
+
+## TP 2
+La fonction survreg permet d’ajuster un modèle paramétrique de vie accélérée. Cette fonction ne
+permet de traiter que le cas où les durées sont exactes ou censurées à droite. Les lois classiques sont
+disponibles et on en choisit une à l’aide de l’option dist : weibull (choix par défaut), exponential,
+gaussian, logistic, lognormal et loglogistic. Si on ne fournit aucune covariable, alors la fonction ajuste tout simplement un modèle paramétrique pour la loi choisie. Mais, à la différence d’une fonction comme fitdistr du package MASS, la fonction survreg prend en compte les durées censurées.
+On reprend l’exemple sur les patients atteints d’un cancer des poumons. On modélise la durée de vie
+par une loi de Weibull. Commençons par regarder le modèle sans covariable.
+
+```{r}
+lung.surv <- with(lung,Surv(time,status))
+lung.reg1 <- survreg(lung.surv~1,dist="weibull")
+print(lung.reg1)
+```
+Comme pour le cas de la régression linéaire, si on applique la fonction summary à l’objet retourné par
+la fonction survreg, alors on obtient plus d’informations.
+```{r}
+summary(lung.reg1)
+```
+Comme expliquée précédemment, le tableau de données lung contient plus d’informations que celle
+utilisée jusqu’à maintenant. En particulier, on connaît le sexe des patients (variable sex). On va donc
+pouvoir ajuster un modèle de vie accélérée avec comme covariable le sexe (codé 1 pour les hommes et
+2 pour les femmes).
+```{r}
+lung.reg2 <- survreg(lung.surv~sex,data=lung,dist="weibull")
+summary(lung.reg2)
+```
+```{r}
+w.shape <- 1/lung.reg2$scale
+w.scale.H <- exp(lung.reg2$coefficients[1]+lung.reg2$coefficients[2]*1)
+w.scale.F <- exp(lung.reg2$coefficients[1]+lung.reg2$coefficients[2]*2)
+x <- seq(from=0,by=1,to=1500)
+f1 <- dweibull(x,shape=w.shape,scale=w.scale.H)
+f2 <- dweibull(x,shape=w.shape,scale=w.scale.F)
+plot(x,f1,type="l",lwd=2,col="blue",xlab="",ylab="")
+lines(x,f2,lwd=2,col="red")
+couleur <- c("blue","red")
+legtxt <- c("Homme","Femme")
+legend("topright",pch="_",legend=legtxt,col=couleur,lwd=2)
+x <- seq(from=0,by=1,to=1500)
+S1 <- pweibull(x,shape=w.shape,scale=w.scale.H,lower.tail=FALSE)
+S2 <- pweibull(x,shape=w.shape,scale=w.scale.F,lower.tail=FALSE)
+plot(x,S1,type="l",lwd=2,col="blue",xlab="",ylab="")
+lines(x,S2,lwd=2,col="red")
+couleur <- c("blue","red")
+legtxt <- c("Homme","Femme")
+legend("topright",pch="_",legend=legtxt,col=couleur,lwd=2)
+abline(h=0.5,lty=2)
+```
+
+```{r}
+head(lung)
+```
+
+
+
+
+
+
+
+

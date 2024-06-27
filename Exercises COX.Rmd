@@ -1,0 +1,116 @@
+---
+title: "TP COX"
+output: html_document
+date: "2022-12-16"
+---
+```{r}
+library(survival)
+library(KMsurv)
+library(ggplot2)
+library(survminer)
+library(knitr)
+library(ranger)
+library(dplyr)
+library(ggfortify)
+library(tidyverse)
+library(kableExtra)
+library(broom)
+library(htmlTable)
+library(magrittr)
+```
+
+##Exercice 1 
+Le jeu de données tongue du package KMsurv contient les durées de vie (en mois) de
+patients atteint d’un cancer de la langue. Les tumeurs peuvent être de deux types haploïde (type =
+1) ou diploïde (type = 2). Ajuster un modèle de Cox et interpréter.   
+Chargement de données
+```{r}
+library(survival)
+library(KMsurv)
+data("tongue")
+unique(tongue[,1])
+```
+
+
+We want to study the fading time of trouts after the stooping the arrival of oxygen in the fish pond.
+Various variables are suspected to influence the fading time. The file Truites.Rd contains the observations for 305 trouts. In addition to the fading time, various variables were observed:
+• temps.evanouissement : observed lifetime;
+• line (genetic line) : A22, AB1 ou R23 ;
+• diet (dietary regime) : marine M or vegetarian V ;
+• status : empty stomach j or not pp
+• arrest (non-censoring indicator) : 1 (exact lifetime) or 0 (right censored lifetime).
+Fit a Cox model and interprate the results.
+
+Chargement de données
+```{r}
+load("Truites.Rd")
+```
+
+```{r}
+data(drug6mp)
+X <- c(drug6mp$t1, drug6mp$t2)
+X
+Delta <- c(rep(x = 1, times = nrow(drug6mp)), drug6mp$relapse)
+Grp <- c(rep(x = "Placebo", times = nrow(drug6mp)),rep(x = "Treated", times = nrow(drug6mp)))
+RemStat <- c(drug6mp$remstat, drug6mp$remstat)
+drug6mp <- cbind.data.frame(X, Delta, Grp, RemStat)
+# Création objet de type survival
+drug6mp.SurvObj <- Surv(time = X, event = Delta)
+# Estimateur de Kaplan-Meier
+ggsurvplot(fit = survfit(drug6mp.SurvObj ~ Grp, data = drug6mp),
+conf.int=TRUE,
+pval=TRUE,
+risk.table=TRUE)
+```
+# Création objet de type survival
+```{r}
+truites.SurvObj <- with(Truites,Surv(time = temps.evanouissement, event = arrest))
+
+```
+
+Estimador Kaplan Meier de la funcion de supervivencia
+los grupos son en ayuno o no, y con alimentacion marina o vegetariana
+```{r}
+ggsurvplot(fit = survfit(truites.SurvObj ~ status+diet, data = Truites),
+conf.int=TRUE,
+pval=TRUE,
+risk.table=TRUE)
+```
+
+
+Modèle COX avec covariable diet
+```{r}
+# Modèle avec covariable Grp
+fit.coxph_diet <- coxph(truites.SurvObj ~ diet, data = Truites)
+broom::tidy(fit.coxph_diet) %>% kable()
+```
+Modèle COX avec covariable diet
+```{r}
+# Modèle avec covariable Grp
+fit.coxph_ayuno <- coxph(truites.SurvObj ~ status, data = Truites)
+broom::tidy(fit.coxph_ayuno) %>% kable()
+```
+#otra gráfica
+```{r}
+ggforest(fit.coxph_diet, data = drug6mp)
+```
+
+
+
+
+Autre code pour présenter les résultats d'un modèle de Cox
+```{r}
+library(tab)
+tabcoxph(fit.coxph_diet)
+
+#Ou encore :
+
+library(sjPlot)
+library(sjmisc)
+library(sjlabelled)
+tab_model(fit.coxph.1, show.r2 = FALSE)
+
+#qui peut être customisable avec du CSS
+
+```
+

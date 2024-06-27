@@ -1,0 +1,319 @@
+---
+title: "Analyse de durées de vie"
+author: "Jiménez Jiménez Marisol"
+date: "2023-02-28"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r,include=FALSE}
+library(ggplot2)
+library(cowplot)
+library(flexsurv)
+library(survival)
+library("gtable")
+library(survminer)
+library(ggfortify)
+library(ranger)
+library(ggeasy)
+```
+
+
+
+### Présentation du cas à examiner
+De 1962 à 1969, plusieurs patients atteint de cirrhose ont rejoint un essai clinique randomisé dont le
+but était d’étudier l’effet de traitement par un corticïde, le prednisone. Les patients ont été répartis au
+hasard entre un traitement par prednisone et un traitement placebo. Les durées de survie des patients
+ont été observées jusqu’en septembre 1974 si bien que les observations sont censurées à droite pour
+les patients vivants à cette date. Les durées de certains patients ont été égalemet censurés à droite
+en quittant l’étude avant septembre 1974 en raison des effets secondaires de la prednisone. Nous ne
+considérons que les données des patients pour lesquels la biopsie initiale pourrait être réévalué. Pour
+chaque patient les informations suivantes sont données :
+
+- Numéro de patient
+- Indicatrice de décès (1) ou de censure (0)
+- Durées observées (nombre de jours depuis le début du traitement)
+- Traitement : *Prednison* ou *Placebo*
+- Sexe : *Female* ou *Male*
+- Ascite (quantité de liquide dans la cavité abdominale au début du traitement : *none*, *Little* ou *moderate*)
+- Âge au début de traitement
+- Prothrombine (indice de la capacité de coagulation du sang), mesuré au début du traitement et
+donné en % de la normale
+
+
+## Objectif du projet
+Effectuer une analyse statistique complète du jeu de données en utilisant, de manière pertinente et appropriée, tout ce qui a été vu en cours : représentations graphiques, tableaux synthétiques, modèle(s) paramétrique(s), méthode(s) non-paramétriques,
+modèle(s) semi-paramétrique(s), méthode(s) de machine learning, etc
+
+
+```{r, include=FALSE}
+my_data <- read.table(file = "Dataset-10.txt",
+                      header=TRUE,sep = " ")
+
+my_data$Ascites <- as.factor(my_data$Ascites)
+my_data$Sex <- as.factor(my_data$Sex)
+print(dim(my_data))
+head(my_data)
+```
+```{r}
+cat("Dimension du data frame : ",dim(my_data))
+head(my_data)
+```
+
+Le but est d’étudier l’effet de traitement par prednisone, la durée d’intérêt ici est alors le décès, on aura reconnu une situation de censure à droite (on n’observe pas le décès après septembre 1974 et nous ne savons pas non plus ce qui arrive aux patients qui abandonnent l'étude.) Pour le moment, nous allons utiliser : la variable *ObsTime* les nombre de jours depuis le début du traitement, la variable *Death* qui indique si'l s'agit d'un décè ou d'une censure et l'âge du début du traitement.
+
+
+## Modèles paramétriques
+
+La fonction survreg nous permetra d’ajuster un modèle paramétrique de vie accélérée en prendre en compte les durées censurées. Parmi les lois classiques que nous pouvons utiliser pour ajuster le modèle, nous utiliserons celle de Weibull.
+
+Nous allons d'abord séparer la population entre les patients ayant reçu un traitement avec Prednison et ceux ayant reçu un traitement placebo.
+
+### Placebo
+On construit ensuite un objet de type survival à l’aide de la fonction Surv où la limite supérieure est *Age + ObsTime*
+```{r}
+my_data_placebo=my_data[my_data$Treatment == "Placebo", ]
+surv.placebo<-with(my_data_placebo,Surv(Age+ceiling(ObsTime/365),Death))
+head(surv.placebo)
+```
+On affiche les premières observations. On obtient alors le résultat où le symbole + indique que la durée est censurée à droite.
+Le patient 1, par exemple, âgé de 58 ans au début de l’étude, n’était toujours pas décédé à l’âge de 64 ans.
+
+Commençons par regarder le modèle avec tous les 3 covariables possibles : *Traitement, Sexe* et *Ascites*.
+
+```{r}
+placebo.reg1 <- survreg(surv.placebo~Sex+Prothrombin+Ascites,data=my_data_placebo,dist="weibull")
+summary(placebo.reg1)
+```
+Pour valider la signification de chaque variable, nous examinons le résultat de l'analyse anova. 
+```{r}
+anova(placebo.reg1)
+```
+Nous concluons que pour le traitement placebo, la variable *Ascites* ne contribue pas suffisamment au modèle, en plus la variable *Prohtrombin* est proche des limites pour une valeur *p* acceptable avec un coefficient très faible, de sorte que nous continuons seulement avec la covariable *Sex*. 
+
+```{r}
+placebo.reg2 <- survreg(surv.placebo~Sex,data=my_data_placebo,dist="weibull")
+summary(placebo.reg2)
+```
+
+### Prednison
+Nous répétons le processus pour le traitement avec Prednison, on construit un objet de type survival et commençons par regarder le modèle avec tous les 3 covariables possibles.
+```{r}
+my_data_prednison=my_data[my_data$Treatment != "Placebo", ]
+surv.prednison<-with(my_data_prednison,Surv(Age+ceiling(ObsTime/365),Death))
+prednison.reg1 <- survreg(surv.prednison~Sex+Prothrombin+Ascites,data=my_data_prednison,dist="weibull")
+summary(prednison.reg1)
+```
+
+Pour valider la signification de chaque variable, nous examinons le résultat de l'analyse anova. 
+```{r}
+anova(prednison.reg1)
+```
+Nous concluons que pour le traitement prednison, il y a aussi une seule variable à garder : *Sex*. 
+
+```{r}
+prednison.reg2 <- survreg(surv.prednison~as.factor(Sex),data=my_data_prednison,dist="weibull")
+summary(prednison.reg2)
+```
+
+Voyons à quoi ressemblent les fonctions de survie pour les deux traitements segmentés par sexe. 
+```{r,include=FALSE}
+w.shape <- 1/placebo.reg2$scale
+w.scale.H <- exp(placebo.reg2$coefficients[1]+placebo.reg2$coefficients[2]*2)
+w.scale.F <- exp(placebo.reg2$coefficients[1]+placebo.reg2$coefficients[2]*1)
+w.shapeP <- 1/prednison.reg2$scale
+w.scale.HP <- exp(prednison.reg2$coefficients[1]+prednison.reg2$coefficients[2]*2)
+w.scale.FP <- exp(prednison.reg2$coefficients[1]+prednison.reg2$coefficients[2]*1)
+
+x <- seq(from=27,by=1,to=89)
+
+S1 <- pweibull(x,shape=w.shape,scale=w.scale.H,lower.tail=FALSE)
+S2 <- pweibull(x,shape=w.shape,scale=w.scale.F,lower.tail=FALSE)
+
+
+S1P <- pweibull(x,shape=w.shapeP,scale=w.scale.HP,lower.tail=FALSE)
+S2P <- pweibull(x,shape=w.shapeP,scale=w.scale.FP,lower.tail=FALSE)
+
+plot(x,S1,type="l",lwd=2,col="lightblue",xlab="",ylab="",main = "Fonctions de survie")
+lines(x,S2,lwd=2,col="thistle")
+lines(x,S1P,lwd=2,col="cyan3")
+lines(x,S2P,lwd=2,col="orchid")
+couleur <- c("lightblue","thistle","cyan3","orchid")
+legtxt <- c("H Placebo","F Placebo","H Treatment","F Treatment")
+legend("topright",pch="_",legend=legtxt,col=couleur,lwd=2)
+
+```
+
+
+```{r}
+sPlacebo  <- flexsurvreg(surv.placebo~as.factor(Sex),dist='weibull',data=my_data_placebo)
+plot(sPlacebo,col=c("thistle","lightblue"),main = "Fonctions de survie",xlim = c(30,90))
+sPred  <- flexsurvreg(surv.prednison~as.factor(Sex),dist='weibull',data=my_data_prednison)
+lines(sPred, col=c("orchid","cyan3"))
+legtxt <- c("H Placebo","F Placebo","H Treatment","F Treatment")
+legend("topright",pch="_",legend=legtxt,col=couleur,lwd=2)
+
+```
+
+Nous pouvons voir que pour les Hommes, le traitement ne fait practiquement aucune différence sur leur durée de vie, tandis que pour les femmes, nous voyons que le traitement avec Prednison assure une durée de vie plus longue, mais la différence reste encore très faible.
+
+
+## Modèles non-paramétriques
+
+### Estimateurs Kaplan-Meier et Fleming-Harrington
+On va calculer l'estimateur de Kaplan-Meier de la survie ce qui peut être obtenu en utilisant la fonction survfit pour valider choix de la loi de Weibull. 
+
+```{r}
+survival_all<-with(my_data,Surv(Age+ceiling(ObsTime/365),Death))
+km_estimation <- survfit(survival_all~ Sex + Treatment,data = my_data)
+print(km_estimation)
+```
+Nous faisons de même pour l'estimateur Fleming-Harrington
+```{r}
+fh_estimation <- survfit(survival_all~ Sex + Treatment,data = my_data,type = "fleming-harrington")
+print(fh_estimation)
+```
+Sur les 439 observations, 263 durées exactes ont été observées. La médiane estimée est égale à 71 pour les femmes traitées avec prednison, 73 pour ceux traitées avec le placebo ; pour les hommes, enfin, quel que soit le traitement, nous avons la même  médiane estimée pour l'estimateur KM, comme nous le soupçonnions d'après le graphique ci-dessus. 
+
+On valide graphiquement le choix du modèle paramétrique Weibull dans la grapique suivante avec l'estimateur de KM car il est pratiquement identique à ce de Fleming Harrington :
+
+```{r}
+couleur <- c("thistle","orchid","lightblue","cyan3")
+plot(km_estimation,mark.time=FALSE,lwd=2,col=couleur,xlim = c(27,90))
+lines(sPred, col=c("orchid","cyan3"))
+lines(sPlacebo,col=c("thistle","lightblue"))
+
+legtxt <- c("F Placebo","F Treatment","H Placebo","H Treatment")
+legend("topright",pch="_",legend=legtxt,col=couleur,lwd=2)
+```
+
+###  Estimateur de Breslow du risque cumulé
+Cet estimateur étant basé sur celui de Kaplan-Meier, on peut le calculer en partant de ce qui précède. Dans ce graphique, nous pouvons également observer que nous avons un risque cumulé plus élevé pour les patients qui ont suivi le traitement avec placebo et en générale pour les hommes.
+
+```{r}
+breslow <- cbind(km_estimation$time,-log(km_estimation$surv))
+plot(breslow[1:33,],type="s",lwd=2,xlab="",ylab="",col=couleur,xlim = c(30,90))
+par(new=TRUE)
+plot(breslow[34:71,],type="s",lwd=2,col="orchid",xlim = c(30,90),xaxt = "n",yaxt = "n",xlab="",ylab="")
+par(new=TRUE)
+plot(breslow[72:107,],type="s",lwd=2,col="lightblue",xlim = c(30,90),xaxt = "n",yaxt = "n",xlab="",ylab="")
+par(new=TRUE)
+plot(breslow[108:145,],type="s",lwd=2,col="cyan3",xlim = c(30,90),xaxt = "n",yaxt = "n",xlab="",ylab="")
+```
+
+## Modèles Semi-paramétriques
+### Cox
+Modèle avec covariable Sex et Treatment (sans interaction)
+```{r}
+fit_coxph_1 <- coxph(survival_all ~ Sex+Treatment, data = my_data)
+fit_coxph_1
+```
+Nous voyons que le traitement n'est pas significatif dans notre modèle, donc nous créons maintenant le modèle avec seulement la covariable du sexe en gardant le traitement comme stratification.
+
+Modèle avec covariable Sex et Treatment avec stratification sur Treatment
+```{r}
+fit_coxph_2 <- coxph(survival_all ~ Sex+strata(Treatment), data = my_data)
+fit_coxph_2
+```
+Nous en concluons qu'un homme a 1,76 fois plus de risque de mourir qu'une femme.D'autre part, nous avons également constaté visuellement que les courbes de survie ne sont pas suffisamment différentes pour chaque traitement.
+```{r}
+cox_fit_surv <- survfit(fit_coxph_2)
+autoplot(cox_fit_surv,xlab = "Âge")
+```
+
+### Risques proportionnels
+Nous allons maintenant évaluer l'hypothèse des risques proportionnels, en utilisant la fonction ggcoxzph() pour l'analyse graphique.
+
+```{r}
+check_PH <- cox.zph(fit_coxph_2)
+check_PH
+```
+L'hypothèse nulle est associée à la supposition des risques proportionnels. Les résultats de ce test indiquent que l'hypothèse des risques proportionnels n'est pas violée pour la covariable *Sex*, la valeur *p* associée à ce test est de 0,7921, ce qui est supérieur à 0,05, donc ne rejetant pas l'hypothèse des risques proportionnels.
+
+```{r}
+ggcoxzph(check_PH)
+```
+
+### Influence des individus
+Finalement pour l'influence des individus on analyse les residuales, le graphique suggère qu'aucune des observations n'est pas très influente individuellement, même si certaines des valeurs dfbeta sont grandes par rapport aux autres ; celles qui sont supérieures et inférieures à 0,02 mais elles ne sont que quelques-unes
+```{r, warning = FALSE,message = FALSE}
+ggcoxdiagnostics(fit = fit_coxph_2, type = "dfbeta",
+linear.predictions = FALSE, ggtheme = theme_bw())
+```
+
+## Modèles ML
+### Forêts aléatoires
+Pour nos données, nous avons choisi le traitement des forêts aléatoires, nous allons commencer par tracer la fonction de survie pour chaque individu dans l'étude.
+```{r,include=FALSE}
+r_fit <- ranger(formula = Surv(Age+ceiling(ObsTime/365),Death) ~ Sex + Treatment,data = my_data,importance = "permutation", splitrule = "extratrees",verbose = TRUE)
+# Average the survival models
+death_times <- r_fit$unique.death.times
+surv_prob <- data.frame(r_fit$survival)
+avg_prob <- sapply(surv_prob,mean)
+
+```
+```{r}
+plot(x = r_fit$unique.death.times, y = r_fit$survival[1,],
+type = "l",
+ylim = c(0,1),
+col = "red",
+xlab = "Age",
+ylab = "Survie",
+main = "Courbes de survie des patients")
+cols <- colors()
+for (n in sample(c(2:dim(my_data)[1]), 20)){
+lines(x = r_fit$unique.death.times, y = r_fit$survival[n,], type = "l", col = cols[n])
+}
+lines(x = death_times, y = avg_prob, lwd = 3,col="cyan3")
+legend(25, 0.7, legend = c('Moyenne'), lty=1, cex=1,col="cyan3",lwd=2.5)
+```
+
+En examinant le rôle joué par chaque variable, nous constatons une fois de plus que le traitement ne contribue pas à notre modèle.
+```{r}
+vi <- data.frame(sort(round(r_fit$variable.importance, 4), decreasing = TRUE))
+names(vi) <- "importance"
+print(vi)
+```
+
+On garde seulement la covariable *Sex*.
+
+```{r}
+r_fit2 <- ranger(formula = Surv(Age+ceiling(ObsTime/365),Death) ~ Sex,
+data = my_data,
+
+importance = "permutation",
+splitrule = "extratrees",
+verbose = TRUE)
+```
+
+
+## Conclusions
+Enfin, nous traçons les modèles (pour le cas sans covariables) obtenus par les méthodes semi-paramétrique, non-paramétrique et de ML. Nous constatons que nos modèles sont effectivement analogues. Nous concluons que, bien que le traitement Predison assure une durée de vie plus longue, il est si léger qu'il n'y a pratiquement aucune différence entre suivre l'un ou l'autre traitement.
+
+```{r,include=FALSE}
+rfi <- rep(x = "RF", length = length(r_fit2$unique.death.times))
+rf_df <- data.frame(r_fit2$unique.death.times,avg_prob,rfi)
+names(rf_df) <- c("Time", "Surv", "Model")
+
+fit_coxph_21 <- coxph(survival_all ~ 1, data = my_data)
+cox_fit_surv2 <- survfit(fit_coxph_21)
+coxi <- rep(x = "Cox", length = length(cox_fit_surv2$time))
+cox_df <- data.frame(cox_fit_surv2$time,cox_fit_surv2$surv,coxi)
+names(cox_df) <- c("Time", "Surv", "Model")
+
+
+km_estimation1 <- survfit(survival_all ~ 1,data = my_data)
+kmi <- rep(x = "KM", length = length(km_estimation1$time))
+km_df <- data.frame(km_estimation1$time,km_estimation1$surv,kmi)
+names(km_df) <- c("Time", "Surv", "Model")
+```
+
+```{r}
+plot_df <- rbind(km_df,cox_df,rf_df)
+p <- ggplot(plot_df, aes(x = Time, y = Surv, color = Model))
+p + geom_line() + labs(y = "Survie",x = "Âge") +
+  ggtitle(label = "Fonctions de survie") +
+  ggeasy::easy_center_title() + xlim(20, 90) + labs(color="Modèle\n") 
+```
+

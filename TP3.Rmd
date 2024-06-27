@@ -1,0 +1,124 @@
+---
+title: "TP2"
+output: html_document
+date: "2022-12-15"
+---
+
+
+## 1 Estimateur de Kaplan-Meier de la survie
+
+Cet estimateur peut être obtenu en utilisant la fonction survfit. On reprend l’exemple précédent et on commence par le cas sans covariable.
+```{r}
+lung.surv <- with(lung,Surv(time,status))
+km.lung1 <- survfit(lung.surv~1)
+print(km.lung1)
+```
+Sur les 228 observations, 165 durées exactes ont été observées. La médiane estimée est égale à 310
+avec [285, 363] comme intervalle de confiance à 95 %. On peut obtenir des informations différentes en
+appliquant la fonction
+```{r}
+summary(km.lung1)
+```
+
+Pour chaque temps d’observation (correspondant à une ligne), on a le nombre de sujets à risque
+(deuxième colonne), le nombre de sujets ayant subi l’événement à cette date (troisième colonne), l’estimation de la fonction de survie à cet instant et son écart-type estimé (quatrième et cinquième colonnes) ainsi qu’un intervalle de confiance à 95 % de la survie (les deux dernières colonnes). Enfin, il est possible de représenter graphiquement l’estimateur de Kaplan-Meier en utilisant la fonction plot.
+```{r}
+plot(km.lung1,mark.time=FALSE,lwd=2,col="red")
+```
+
+La courbe de survie estimée est représentée sur la figure 1. On notera que, dans l’appel à la fonction
+plot, on a fixé l’option mark.time à FALSE : par défaut, la fonction plot appliquée au résultat de la
+fonction survfit représente par des traits les instants de censure (les durées exactes correspondent
+aux sauts de l’estimation de la fonction de survie).
+Il est possible de représenter l’estimateur de Kaplan-Meier pour plusieurs sous-populations. Considérons le même jeu de données et la covariable sex.
+
+```{r}
+km.lung2 <- survfit(lung.surv~sex,data=lung)
+print(km.lung2)
+summary(km.lung2)
+couleur <- c("blue","red")
+plot(km.lung2,mark.time=FALSE,lwd=2,col=couleur)
+legtxt <- c("Homme","Femme")
+legend("topright",pch="_",legend=legtxt,col=couleur,lwd=2)
+```
+Lors de l’appel de la fonction print ou de la fonction summary, on obtient le même type de sortie
+que ci-dessus, mais pour chaque valeur de la covariable (qualitative). Enfin, si on applique la fonction
+plot, on obtient la figure 2. On notera que les intervalles de confiance ne sont alors pas représentés.
+On peut les afficher en fixant l’option conf.int à TRUE. Enfin, il est possible d’utiliser l’estimateur de Kaplan-Meier pour valider graphiquement le choix d’un modèle paramétrique. Reprenons l’ajustement
+d’une loi de Weibull précédemment étudiée.
+
+```{r}
+plot(km.lung2,mark.time=FALSE,lwd=2,col=couleur)
+lines(x,S1,lwd=2,lty=2,col="blue")
+lines(x,S2,lwd=2,lty=2,col="red")
+```
+## 2 Estimateur de Breslow du risque cumulé
+Cet estimateur étant basé sur celui de Kaplan-Meier, on peut très facilement calculer cet estimateur
+en partant de ce qui précède. Reprenons le même exemple (on ne considère pas de covariable, les
+choses se faisant de la même manière).
+```{r}
+lung.surv <- with(lung,Surv(time,status))
+km.lung1 <- survfit(lung.surv~1)
+b.lung1 <- cbind(km.lung1$time,-log(km.lung1$surv))
+plot(b.lung1,type="s",lwd=2,xlab="",ylab="",col="red")
+```
+##3 Estimateur de Nelson-Aalen du risque cumulé
+Cet estimateur n’est pas implémenté directement (du moins dans le package Survival). Néanmoins,
+de la même manière que pour l’estimateur précédent, on peut récupérer les informations retournées par
+la fonction survfit pour calculer l’estimation de Nelson-Aalen.
+
+On obtient le graphique représenté sur la figure 5, avec en rouge l’estimateur de Nelson-Aalen et en
+noir l’estimateur de Breslow.
+```{r}
+lung.surv <- with(lung,Surv(time,status))
+km.lung1 <- survfit(lung.surv~1)
+na.lung1 <- cbind(km.lung1$time,cumsum(km.lung1$n.event/km.lung1$n.risk))
+plot(b.lung1,type="s",lwd=2,xlab="",ylab="")
+lines(na.lung1,type="s",lwd=2,xlab="",ylab="",col="red")
+```
+## 4 Estimateur de Harrington-Fleming de la survie
+Partant de l’estimateur de Nelson-Aalen, on peut très facilement calculer cet estimateur.
+```{r}
+lung.surv <- with(lung,Surv(time,status))
+fh.lung1 <- cbind(km.lung1$time,exp(-na.lung1[,2]))
+plot(km.lung1,mark.time=FALSE,lwd=2,conf.int=FALSE)
+lines(fh.lung1,type="s",lwd=2,xlab="",ylab="",col="red")
+```
+On obtient le graphique représenté sur la figure 6, avec en rouge l’estimateur de Harrington-Fleming
+et en noir l’estimateur de Kaplan-Meier. En fait, on aurait pu obtenir directement l’estimateur de
+Harrington-Fleming avec la fonction survreg et l’option Harrington-Fleming (cette option est fixée
+à kaplan-meier par défaut).
+
+```{r}
+fh.lung2 <- survfit(lung.surv~1, type = "fleming-harrington")
+```
+
+## 5 Estimation de la durée de vie moyenne
+```{r}
+library(survival)
+my.surv <- Surv(X1$time, X1$cens)
+km<- survfit(my.surv ~ 1)
+print(survfit(my.surv ~ 1), print.rmean=TRUE)
+my.surv <- Surv(X2$time, X2$cens)
+survfit(my.surv ~ 1)
+print(survfit(my.surv ~ 1), print.rmean=TRUE)
+moyenne1 <- 0
+for (i in 1:r1) {
+  moyenne1 <- moyenne1 + KM1[i]*(tps[i+1]-tps[i])
+}
+moyenne1 <- 0
+for (i in 1:r1) {
+moyenne1 <- moyenne1 + KM1[i]*(tps1[i+1]-tps1[i])
+}
+moyenne2 <- 0
+for (i in 1:r2) {
+moyenne2 <- moyenne2 + KM2[i]*(tps2[i+1]-tps2[i])
+}
+approx1A <- mean(X1$time[which(X1$cens==1)])
+approx1B <- mean(X1$time)
+approx2A <- mean(X2$time[which(X2$cens==1)])
+approx2B <- mean(X2$time)
+```
+
+
+
